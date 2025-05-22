@@ -429,10 +429,73 @@ class OGame(object):
         else:
             return False
 
+    def highscore(self, page=1):
+        data = {
+            'page': 'highscoreContent',
+            'category': '1',
+            'type': '0',
+            'site': str(page)
+        }
+        response = self.session.post(
+            url=self.index_php,
+            params=data,
+            headers={'X-Requested-With': 'XMLHttpRequest'}
+        )
+        bs4 = BeautifulSoup4(response.content)
+        player_list = []
+        for i in range(1, 101):
+            rawy = bs4.select('tr', attrs={'class': ''})[i]
+
+            class PlayerData:
+                name = rawy.find('span', attrs={'class': 'playername'}).text.strip()
+                player_id = int(rawy['id'].replace("position", ""))
+                rank = int(rawy.find('td', attrs={'class': 'position'}).text.strip())
+                points = int(rawy.find('td', attrs={'class': 'score'}).text.strip().replace(".", "").replace(",", ""))
+                list = [
+                    name, player_id, rank, points
+                ]
+
+            player_list.append(PlayerData)
+        return player_list
+
     def character_class(self):
         character = self.landing_page.find_partial(
             class_='sprite characterclass medium')
         return character['class'][3]
+
+    def choose_character_class(self, classid):  # "1"-miner # "2"-warrior # "3"-explorer
+        character = self.landing_page.find_partial(
+            class_='sprite characterclass medium')
+        data = {
+            'page': "ingame",
+            'component': "characterclassselection",
+            'characterClassId': classid,
+            'action': "selectClass",
+            'ajax': '1',
+            'asJson': '1'
+        }
+        if character['class'][3] == 'none':
+            response = self.session.post(
+                url=self.index_php,
+                params=data,
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ).json()
+            if response['status'] == 'success':
+                return True
+        return False
+
+    def lf_character_class(self, planet_id):
+        response_class = self.session.get(
+            url=self.index_php + 'page=ingame&component=overview',
+            params={'cp': planet_id}
+        ).text
+        response_class = BeautifulSoup4(response_class)
+        lf_character_class = response_class.find_partial(
+            class_='lifeform-item-icon small')
+        if lf_character_class:
+            return lf_character_class['class'][2]
+        else:
+            return None
 
     def rank(self):
         rank = self.landing_page.find(id='bar')
@@ -918,78 +981,219 @@ class OGame(object):
         response = self.session.post(
             url=self.index_php + 'page=ingame&component=galaxyContent&ajax=1',
             data={'galaxy': coords[0], 'system': coords[1]},
-            headers={'X-Requested-With': 'XMLHttpRequest'}
-        ).json()
-        bs4 = BeautifulSoup4(response['galaxy'])
+            headers={
+                'X-Requested-With': 'XMLHttpRequest',
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            }
+        )
 
-        def playerId(tag):
-            numbers = re.search(r'[0-9]+', tag).group()
-            return int(numbers)
+        if response.status_code == 200:
+            try:
+                response = response.json()
+                bs4 = BeautifulSoup4(response['galaxy'])
 
-        players = bs4.find_all_partial(id='player')
-        player_name = {
-            playerId(player['id']): player.h1.span.text
-            for player in players
-        }
-        player_rank = {
-            playerId(player['id']): int(player.a.text)
-            for player in players if player.a.text.isdigit()
-        }
+                def playerId(tag):
+                    numbers = re.search(r'[0-9]+', tag).group()
+                    return int(numbers)
 
-        alliances = bs4.find_all_partial(id='alliance')
-        alliance_name = {
-            playerId(alliance['id']): alliance.h1.text.strip()
-            for alliance in alliances
-        }
+                players = bs4.find_all_partial(id='player')
 
-        planets = []
-        for row in bs4.select('#galaxytable .row'):
-            status = row['class']
-            status.remove('row')
-            if 'empty_filter' in status:
-                continue
-            elif len(status) == 0:
-                planet_status = [const.status.yourself]
-                pid = self.player_id
-                player_name[pid] = self.player
-            else:
-                planet_status = [
-                    re.search('(.*)_filter', sta).group(1)
-                    for sta in status
-                ]
+                player_names = {
+                    playerId(player['id']): player.h1.span.text
+                    for player in players
+                }
 
-                player = row.find(rel=re.compile(r'player[0-9]+'))
-                if not player:
-                    continue
-                pid = playerId(player['rel'][0])
-                if pid == const.status.destroyed:
-                    continue
+                player_rank = {
+                    playerId(player['id']): int(player.a.text)
+                    for player in players if player.a.text.isdigit()
+                }
 
-            planet = int(row.find(class_='position').text)
-            planet_cord = const.coordinates(coords[0], coords[1], int(planet))
-            moon_pos = row.find(rel=re.compile(r'moon[0-9]*'))
+                alliances = bs4.find_all_partial(id='alliance')
+                alliance_name = {
+                    playerId(alliance['id']): alliance.h1.text.strip()
+                    for alliance in alliances
+                }
 
-            alliance_id = row.find(rel=re.compile(r'alliance[0-9]+'))
-            alliance_id = playerId(
-                alliance_id['rel']) if alliance_id else None
+                planets = []
+                for row in bs4.select('#galaxytable .row'):
+                    status = row['class']
+                    status.remove('row')
+                    if 'empty_filter' in status:
+                        continue
+                    elif len(status) == 0 and 'administrator' not in str(row).lower():
+                        planet_status = [const.status.yourself]
+                        pid = self.player_id
+                        player_names[pid] = self.player
+                    else:
+                        planet_status = [
+                            re.search('(.*)_filter', sta).group(1)
+                            for sta in status
+                        ]
 
-            class Position:
-                position = planet_cord
-                name = row.find(id=re.compile(r'planet[0-9]+')).h1.span.text
-                player = player_name[pid]
-                player_id = pid
-                rank = player_rank.get(pid)
-                status = planet_status
-                moon = moon_pos is not None
-                alliance = alliance_name.get(alliance_id)
-                list = [
-                    name, position, player,
-                    player_id, rank, status, moon, alliance
-                ]
+                        player = row.find(rel=re.compile(r'player[0-9]+'))
+                        if not player:
+                            continue
+                        pid = playerId(player['rel'][0])
+                        if pid == const.status.destroyed:
+                            continue
 
-            planets.append(Position)
+                    planet_timer_row = None
+                    if row.find(class_='activity showMinutes tooltip js_hideTipOnMobile') is not None:
+                        planet_timer_row = row.find(
+                            class_='activity showMinutes tooltip js_hideTipOnMobile').text.strip()
+                    elif row.find(class_='activity') is not None:
+                        planet_timer_row = '15'
+                    else:
+                        planet_timer_row = 'None'
 
-        return planets
+                    planet = int(row.find(class_='position').text)
+                    planet_cord = const.coordinates(coords[0], coords[1], int(planet))
+
+                    alliance_id = row.find(rel=re.compile(r'alliance[0-9]+'))
+                    alliance_id = playerId(
+                        alliance_id['rel']) if alliance_id else None
+
+                    debris_resources = [0, 0, 0]
+                    try:
+                        debris_resources = row.find_all('li', {'class': 'debris-content'})
+                        debris_resources = [
+                            int(debris_resources[0].text.split(':')[1].replace('.', '')),
+                            int(debris_resources[1].text.split(':')[1].replace('.', '')),
+                            0
+                        ]
+                    except:
+                        debris_resources = [0, 0, 0]
+
+                    try:
+                        recyclers_needed = row.select_one(
+                            "div#debris" + str(planet) + " ul.ListLinks li:nth-child(3)").text
+                        recyclers_needed = recyclers_needed = int(re.search(r'\d+', recyclers_needed).group())
+                    except:
+                        recyclers_needed = None
+
+                    planet_id_row = None
+                    if row.find('td', {'class': "colonized"}).has_attr('data-planet-id'):
+                        planet_id_row = row.find('td', {'class': "colonized"}).attrs['data-planet-id']
+
+                    inactive_row = False
+                    if 'inactive_filter' in str(row):
+                        inactive_row = True
+
+                    strong_player_row = False
+                    if row.find('span', class_='status_abbr_strong') is not None:
+                        strong_player_row = True
+
+                    newbie_row = False
+                    if row.find(class_='newbie_filter') is not None:
+                        newbie_row = True
+
+                    vacation_row = False
+                    if 'vacation_filter' in str(row):
+                        vacation_row = True
+
+                    honorable_target_row = False
+                    if row.find('span', class_='status_abbr_honorableTarget') is not None:
+                        honorable_target_row = True
+
+                    administrator_row = False
+                    if row.find('span', class_='status_abbr_admin') is not None:
+                        administrator_row = True
+
+                    banned_row = False
+                    if row.find('span', class_='status_abbr_banned') is not None:
+                        banned_row = True
+
+                    is_bandit_row = False
+                    if row.find(class_=['rank_bandit1', 'rank_bandit2', 'rank_bandit3']) is not None:
+                        is_bandit_row = True
+
+                    is_starlord_row = False
+                    if row.find(class_=['rank_starlord1', 'rank_starlord2', 'rank_starlord3']) is not None:
+                        is_starlord_row = True
+
+                    is_outlaw_row = False
+                    if row.find('span', class_='status_abbr_outlaw') is not None:
+                        is_outlaw_row = True
+
+                    # Moon Info
+                    moon_id_row = 0
+                    if row.find('td', {'class': "moon"}).has_attr('data-moon-id'):
+                        moon_id_row = row.find('td', {'class': "moon"}).attrs['data-moon-id']
+
+                    moon_pos = row.find(rel=re.compile(r'moon[0-9]*'))
+
+                    moon_activity_row = 0
+                    moon_size_row = 0
+                    if int(moon_id_row) > 0:
+                        if row.select_one("td.moon div.activity") is not None:
+                            moon_activity_row = None
+                            if row.find(class_=re.compile(r'alert_triangle')) is not None:
+                                moon_activity_row = 15
+                            else:
+                                moon_activity_row = row.select_one("td.moon div.activity").text.strip()
+
+                        # Moon size
+                        moon_size_row = int(row.select_one("td.moon span#moonsize").text.split()[0])
+
+                    debris_16 = bs4.find(class_="expeditionDebrisSlotBox")
+                    if debris_16:
+                        debris_data = debris_16.find(class_='ListLinks').text.replace(".", "")
+                        debris_16 = [int(data) for data in re.findall(r'\d+', debris_data)]
+                    else:
+                        debris_16 = [0, 0, 0]  # [met, kris, pf]
+
+                    class Position:
+                        coordinates = planet_cord
+                        galaxy = planet_cord[0]
+                        system = planet_cord[1]
+                        position = planet_cord[2]
+                        planet_name = row.find(id=re.compile(r'planet[0-9]+')).h1.span.text
+                        player_name = player_names[pid]
+                        player_id = pid
+                        rank = player_rank.get(pid)
+                        status = planet_status
+                        has_moon = moon_pos is not None
+                        alliance = alliance_name.get(alliance_id)
+                        alli_id = alliance_id
+                        planet_activity = planet_timer_row
+                        moon_activity = moon_activity_row
+                        planet_df = debris_resources[:2]
+                        planet_df_m = debris_resources[0]
+                        planet_df_c = debris_resources[1]
+                        planet_recyclers_needed = recyclers_needed
+                        planet_id = planet_id_row
+                        moon_size = moon_size_row
+                        moon_id = moon_id_row
+                        inactive = inactive_row
+                        strong_player = strong_player_row
+                        newbie = newbie_row
+                        vacation = vacation_row
+                        honorable_target = honorable_target_row
+                        administrator = administrator_row
+                        banned = banned_row
+                        is_bandit = is_bandit_row
+                        is_starlord = is_starlord_row
+                        is_outlaw = is_outlaw_row
+                        expedition_debris = debris_16[:2]
+                        needed_pf = debris_16[2]
+                        list = [
+                            coordinates, galaxy, system, position, planet_id, planet_name, player_name, player_id, rank,
+                            status,
+                            has_moon, alliance,
+                            planet_activity,
+                            moon_activity, planet_df, planet_df_m, planet_df_c, planet_recyclers_needed, moon_size,
+                            moon_id, inactive, strong_player, newbie, vacation, honorable_target, administrator, banned,
+                            is_bandit, is_starlord, is_outlaw, expedition_debris, needed_pf
+                        ]
+
+                    planets.append(Position)
+
+                return planets
+            except Exception as galaxy_e:
+                print(f'error galaxy: {galaxy_e}')
+        else:
+            print("error galaxy scan")
+            return []
 
     def galaxy_debris(self, coords):
         response = self.session.post(
@@ -1063,6 +1267,101 @@ class OGame(object):
 
     def shop(self):
         raise NotImplementedError("function not implemented yet PLS contribute")
+
+    def shop_items(self):
+        raw = self.landing_page.find('head')
+        item_list = re.search(r'var itemNames = (.*);', str(raw)).group(1)
+        json_list = json.loads(item_list)
+        listofelems = [[value, key] for key, value in json_list.items()]
+        item_duration = [" 7d", " 30d", " 90d"]
+        for count, elem in enumerate(listofelems):
+            index = max(count - 1, 0)
+            if 87 > count > 1:
+                if elem[0] == listofelems[index][0]:
+                    if item_duration[0] in listofelems[max(index - 1, 0)][0]:
+                        listofelems[index][0] = elem[0] + item_duration[1]
+                    else:
+                        listofelems[index][0] = elem[0] + item_duration[0]
+                else:
+                    if listofelems[index][0][:9] == listofelems[max(index - 1, 0)][0][:9]:
+                        listofelems[index][0] = listofelems[index][0] + item_duration[2]
+        return listofelems
+
+    def buy_item(self, id, activate_it=False):
+        response = self.session.get(
+            url=self.index_php + 'page=shop&ajax=1&type={}'.format(id),
+            headers={'X-Requested-With': 'XMLHttpRequest'}
+        ).text
+        if activate_it:
+            activateToken = re.search(r'var token\s?=\s?"([^"]*)";', str(response)).group(1)
+            response2 = self.session.post(
+                url=self.index_php + 'page=inventory',
+                data={'ajax': 1,
+                      'token': activateToken,
+                      'referrerPage': "ingame",
+                      'buyAndActivate': id},
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ).json()
+        else:
+            buyToken = re.search(r'var token\s?=\s?"([^"]*)";', str(response)).group(1)
+            response2 = self.session.post(
+                url=self.index_php + 'page=buyitem&item={}'.format(id),
+                data={'ajax': 1,
+                      'token': buyToken},
+                headers={'X-Requested-With': 'XMLHttpRequest'}
+            ).json()
+        list = []
+        if not response2['error']:
+            if activate_it:
+                item_data = response2['message']['item']
+            else:
+                item_data = response2['item']
+
+            class Item:
+                name = item_data['name']
+                costs = int(item_data['costs'])
+                duration = int(item_data['duration'])
+                effect = item_data['effect']
+                amount = int(item_data['amount'])
+                list = [
+                    name, costs, duration, effect, amount
+                ]
+
+            return Item
+        else:
+            return False
+
+    def activate_item(self, id):
+        response = self.session.get(
+            url=self.index_php + 'page=shop&ajax=1&type={}'.format(id),
+            headers={'X-Requested-With': 'XMLHttpRequest'}
+        ).text
+        activateToken = re.search(r'var token\s?=\s?"([^"]*)";', str(response)).group(1)
+        response2 = self.session.post(
+            url=self.index_php + 'page=inventory&item={}&ajax=1'.format(id),
+            data={'ajax': 1,
+                  'token': activateToken,
+                  'referrerPage': "shop"},
+            headers={'X-Requested-With': 'XMLHttpRequest'}
+        ).json()
+        list = []
+        if not response2['error']:
+            item_data = response2['message']['item']
+
+            class Item:
+                name = item_data['name']
+                costs = int(item_data['costs'])
+                duration = int(item_data['duration'])
+                effect = item_data['effect']
+                canbeused = bool(item_data['canBeActivated'])
+                amount = int(item_data['amount'])
+                list = [
+                    name, costs, duration, effect, canbeused, amount
+                ]
+
+            return Item
+        else:
+            return False
 
     def fleet_coordinates(self, event, Coords):
         coordinate = [
@@ -1743,6 +2042,46 @@ class OGame(object):
         if not response4['error']:
             getitem = True
         return getitem
+
+    def yeast(self, num):
+        alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
+        length = len(alphabet)
+        encoded = ""
+        while num > 0:
+            encoded = str(alphabet[int(num % length)]) + encoded
+            num = int(math.floor(float(num / length)))
+        return encoded
+
+    def websocket_init(self):
+        response = self.session.get(
+            url=self.index_php +
+                'page=ingame&component=traderOverview').text
+
+        try:
+            chathost = re.search(r'var nodeUrl\s?=\s?"https:\\/\\/([^:]+):(\d+)\\/socket.io\\/socket.io.js"',
+                                 response).group(1)
+
+            chatport = re.search(r'var nodeUrl\s?=\s?"https:\\/\\/([^:]+):(\d+)\\/socket.io\\/socket.io.js"',
+                                 response).group(2)
+
+        except Exception as e:
+            return f'err: {e}, failed to extract Chat Host and Port'
+
+        dt = datetime.now(timezone.utc)
+        utc_timestamp = dt.timestamp()
+        token = self.yeast(utc_timestamp * 1000)
+
+        url_combined = f'https://{chathost}:{chatport}/socket.io/?EIO=4&transport=polling&t={token}' \
+            .format(chathost=chathost, chatport=chatport, token=token)
+
+        response2 = self.session.get(
+            url=url_combined,
+            data='40/chat,',
+        ).text
+
+        sid = re.search(r'"sid":"([^"]+)"', response2).group(1)
+
+        return chathost, chatport, token, sid
 
 
 def solve_captcha(question_raw, icons_raw):
