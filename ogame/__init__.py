@@ -1737,13 +1737,44 @@ class OGame(object):
             url=self.index_php + 'page=ingame&component=fleetdispatch&cp={}'
             .format(id)
         ).text
+
         send_fleet_token = re.search('var fleetSendingToken = "(.*)"', response)
         if send_fleet_token is None:
             send_fleet_token = re.search('var token = "(.*)"', response)
-        form_data = {'token': send_fleet_token.group(1)}
+
+        form_data_check = {'token': send_fleet_token.group(1)}
+
         for ship in ships:
-            ship_type = 'am{}'.format(ship[0])
-            form_data.update({ship_type: ship[1]})
+            if ship[1] > 0:
+                ship_type = 'am{}'.format(ship[0])
+                form_data_check.update({ship_type: ship[1]})
+
+        form_data_check.update(
+            {
+                'galaxy': where[0],
+                'system': where[1],
+                'position': where[2],
+                'type': where[3],
+                'union': 0,
+            }
+        )
+
+        response_check_target = self.session.post(
+            url=self.index_php + 'page=ingame&component=fleetdispatch&action=checkTarget&ajax=1&asJson=1',
+            data=form_data_check,
+            headers={
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            }
+        ).json()
+
+        send_fleet_token = response_check_target['newAjaxToken']
+
+        form_data = {'token': send_fleet_token}
+        for ship in ships:
+            if ship[1] > 0:
+                ship_type = 'am{}'.format(ship[0])
+                form_data.update({ship_type: ship[1]})
         form_data.update(
             {
                 'galaxy': where[0],
@@ -1767,10 +1798,18 @@ class OGame(object):
             url=self.index_php + 'page=ingame&component=fleetdispatch'
                                  '&action=sendFleet&ajax=1&asJson=1',
             data=form_data,
-            headers={'X-Requested-With': 'XMLHttpRequest'}
+            headers={
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            }
         ).json()
-        return response['success']
 
+        if response['success']:
+            return response['success'], response['message']
+        else:
+            return response['success'], response['errors'][0]['message']
+
+    
     def return_fleet(self, fleet_id):
         response = self.session.get(
             url=self.index_php + 'page=ingame&component=movement'
