@@ -27,7 +27,7 @@ try:
 except ImportError:
     import ogame.constants as const
 
-user_agent_raw = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+user_agent_raw = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
 
 
 class OGame(object):
@@ -38,7 +38,7 @@ class OGame(object):
             password,
             is_pioneer=False,
             token=None, proxy='',
-            language=None, server_number=None, blackbox_token=None
+            language=None, server_number=None, blackbox_token=None, user_agent_self=None
     ):
         self.universe = universe
         self.username = username
@@ -52,6 +52,8 @@ class OGame(object):
         self.token = token
         self.blackbox_token = blackbox_token
         self.user_agent_raw = user_agent_raw
+        if user_agent_self is not None:
+            self.user_agent_raw = user_agent_self
         self.user_agent = {
             'User-Agent': f'{self.user_agent_raw}'
         }
@@ -588,24 +590,21 @@ class OGame(object):
             url=self.index_php + 'page=ingame&component=overview',
             params={'cp': id}
         ).text
-        research_time = re.search(r'var restTimeresearch = ([0-9]+)', response)
+        research_time = re.search(r'researchCountdown\', ([0-9]+)', response)
         if research_time is None:
-            research_time = datetime.fromtimestamp(0)
+            research_time = 0
         else:
             research_time = int(research_time.group(1))
-            research_time = datetime.fromtimestamp(research_time)
-        build_time = re.search(r'var restTimebuilding = ([0-9]+)', response)
+        build_time = re.search(r'buildingCountdown\', ([0-9]+)', response)
         if build_time is None:
-            build_time = datetime.fromtimestamp(0)
+            build_time = 0
         else:
             build_time = int(build_time.group(1))
-            build_time = datetime.fromtimestamp(build_time)
         shipyard_time = re.search(r'var restTimeship2 = ([0-9]+)', response)
         if shipyard_time is None:
-            shipyard_time = datetime.fromtimestamp(0)
+            shipyard_time = 0
         else:
             shipyard_time = int(shipyard_time.group(1))
-            shipyard_time = datetime.now() + timedelta(seconds=shipyard_time)
 
         class Queue:
             research = research_time
@@ -1199,7 +1198,8 @@ class OGame(object):
         response = self.session.post(
             url=self.index_php + 'page=ingame&component=galaxyContent&ajax=1',
             data={'galaxy': coords[0], 'system': coords[1]},
-            headers={'X-Requested-With': 'XMLHttpRequest'}
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}
         ).json()
         bs4 = BeautifulSoup4(response['galaxy'])
         debris_fields = []
@@ -1550,7 +1550,8 @@ class OGame(object):
                   'mode': 1,
                   'ajax': 1,
                   'token': chat_token},
-            headers={'X-Requested-With': 'XMLHttpRequest'}
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}
         ).json()
         if 'OK' in response['status']:
             return True
@@ -1809,7 +1810,7 @@ class OGame(object):
         else:
             return response['success'], response['errors'][0]['message']
 
-    
+
     def return_fleet(self, fleet_id):
         response = self.session.get(
             url=self.index_php + 'page=ingame&component=movement'
@@ -1839,7 +1840,9 @@ class OGame(object):
                 .format(component, planet_id)
         ).text
 
+        # print(f"Build-GET:{response}")
         build_token = re.search(r'var token\s?=\s?"([^"]*)";', response).group(1)
+        # print(f"Build-TOKEN:{build_token}")
 
         params = {
             'technologyId': type,
@@ -1848,12 +1851,14 @@ class OGame(object):
             'token': build_token
         }
 
-        self.session.post(
+        response = self.session.post(
             url=self.index_php +
                 'page=componentOnly&component=buildlistactions&action=scheduleEntry&asJson=1',
             data=params,
-            headers={'X-Requested-With': 'XMLHttpRequest'}
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}
         )
+        # print(f"Build-POST:{response}")
 
     def deconstruct(self, what, id):
         type = what[0]
@@ -1945,8 +1950,8 @@ class OGame(object):
     def relogin(self, universe=None):
         if universe is None:
             universe = self.universe
-        OGame.__init__(self, universe, self.username, self.password,
-                       self.user_agent, self.proxy)
+        OGame.__init__(self, universe, self.username, self.password, self.proxy,
+                       user_agent_self=self.user_agent)
         return OGame.is_logged_in(self)
 
     def keep_going(self, function):
@@ -1977,7 +1982,8 @@ class OGame(object):
                 'show': 'importexport',
                 'ajax': 1
             },
-            headers={'X-Requested-With': 'XMLHttpRequest'}).text
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}).text
 
         time.sleep(random.randint(250, 1500) / 1000)
 
@@ -2056,7 +2062,8 @@ class OGame(object):
             url=self.index_php +
                 'page=ajax&component=traderimportexport&ajax=1&action=trade&asJson=1',
             data=form_data,
-            headers={'X-Requested-With': 'XMLHttpRequest'}).json()
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}).json()
 
         try:
             new_token = response3['newAjaxToken']
@@ -2075,7 +2082,8 @@ class OGame(object):
             url=self.index_php +
                 'page=ajax&component=traderimportexport&ajax=1&action=takeItem&asJson=1',
             data=form_data2,
-            headers={'X-Requested-With': 'XMLHttpRequest'}).json()
+            headers={'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}).json()
 
         getitem = False
         if not response4['error']:
@@ -2238,6 +2246,7 @@ def solve_captcha(question_raw, icons_raw):
     thresh = cv2.threshold(gry, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
     txt = image_to_string(thresh)
     word_captcha = txt.lower().strip().strip(',.').replace('\n', ' ').replace('\r', '')
+    print(f'captcha question: {word_captcha}')
     try:
         shutil.copy(os.path.join(path_of_the_directory_questions, "question.png"),
                     os.path.join(path_of_the_directory_questions, str(word_captcha) + ".png"))
