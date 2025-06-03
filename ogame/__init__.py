@@ -1840,9 +1840,7 @@ class OGame(object):
                 .format(component, planet_id)
         ).text
 
-        # print(f"Build-GET:{response}")
         build_token = re.search(r'var token\s?=\s?"([^"]*)";', response).group(1)
-        # print(f"Build-TOKEN:{build_token}")
 
         params = {
             'technologyId': type,
@@ -1851,14 +1849,13 @@ class OGame(object):
             'token': build_token
         }
 
-        response = self.session.post(
+        self.session.post(
             url=self.index_php +
                 'page=componentOnly&component=buildlistactions&action=scheduleEntry&asJson=1',
             data=params,
             headers={'X-Requested-With': 'XMLHttpRequest',
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',}
         )
-        # print(f"Build-POST:{response}")
 
     def deconstruct(self, what, id):
         type = what[0]
@@ -2246,7 +2243,6 @@ def solve_captcha(question_raw, icons_raw):
     thresh = cv2.threshold(gry, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
     txt = image_to_string(thresh)
     word_captcha = txt.lower().strip().strip(',.').replace('\n', ' ').replace('\r', '')
-    print(f'captcha question: {word_captcha}')
     try:
         shutil.copy(os.path.join(path_of_the_directory_questions, "question.png"),
                     os.path.join(path_of_the_directory_questions, str(word_captcha) + ".png"))
