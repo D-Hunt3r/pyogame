@@ -2260,7 +2260,8 @@ def solve_captcha(question_raw, icons_raw):
 
 # Blackbox
 def encode_uri_component(s):
-    return quote(s, safe="!~*'()")
+    # Sichere Zeichen exakt wie in encodeURIComponent
+    return quote(s, safe="~()*!.'")
 
 
 def pseudo_b64(s):
@@ -2272,7 +2273,10 @@ def pseudo_b64(s):
         c2 = ord(s[i + 1]) if i + 1 < len(s) else 0
         c3 = ord(s[i + 2]) if i + 2 < len(s) else 0
         t = c1 << 16 | c2 << 8 | c3
-        out += lut[t >> 18 & 63] + lut[t >> 12 & 63] + lut[t >> 6 & 63] + lut[t & 63]
+        out += lut[(t >> 18) & 63]
+        out += lut[(t >> 12) & 63]
+        out += lut[(t >> 6) & 63]
+        out += lut[t & 63]
     return out[:len_mod3 - 3] if len_mod3 > 0 else out
 
 
@@ -2303,50 +2307,49 @@ def get_vector(d):
     return x_vec_b64
 
 
+FIELD_ORDER = [
+    'dg', 'dO4', 'b-I2rx-E', 'YdFB', 'dttJrRyO', 'bdI_', 'Y9JA', 'bM07og', 'cNxRuCGPAg', 'Z9dM', 'ZtVDtyo',
+    'YdY6oxJV', 'b-I4nQ-C61rI', 'd-BEuCA', 'aM02nQV5', 'bL8zohR5', 'c8Y6qRuA', 'dt9DqBc', 'YdY6oxI',
+    'bdI2nwA', 'cNVHtB2QA2zbSbw', 'YdY6oxJYqA', 'd9w-pRFXpw', 'Y8QyqAl8whI', 'Y9U6mw9451U', 'depTtw',
+    'dts-siGT', 'ZA', 'ctdIvSKVCQ'
+]
+
+
 def get_blackbox():
     obj = {
-        "v": 9,  # Version
-        "tz": "Europe/Berlin",  # Timezone
-        "dnt": False,  # do not track
-        "product": "Blink",
-        "osType": "Windows",
-        "app": "Blink",
-        "vendor": "Google Inc.",
-        "mem": 8,
-        "con": 4,
-        "lang": "de-DE,de,en-US,en",
-        "plugins": "f473d473013d58cee78732e974dd4af2e8d0105449c384658cbf1505e40ede50",
-        "gpu": "Google Inc. (Intel),ANGLE (Intel, Intel(R) HD Graphics 530 Direct3D11 vs_5_0 ps_5_0, D3D11)",
-        "fonts": "67574c80452bcc244b31e19a66a5f4768b48be6d88dfc462d5fa7d8570ed87da",
-        "audioC": "c6a7feda4a58521c20f9ffd946a0ce3edfac57a54e35e73857e710c85a9e4415",
-        "width": 1900,
-        "height": 1080,
-        "depth": 24,
-        # "lStore": True,
-        # "sStore": True,
-        "video": "1f03b77fda33742261bea0d27e6423bf22d2bf57febc53ae75b962f6e523cc02",
-        "audio": "c76e22cc6aa9f5a659891983b77cd085a3634dd6f6938827ab5a4c6c61a628e5",
-        "media": "d15bbda6b8af6297ea17f2fb6a724d3bacde9b2e1285a951ee148e4cd5cc452c",
-        "permissions": "86beeaf2f319e30b7dfedc65ccb902a989a210ffb3d4648c80bd0921aa0a2932",
-        "audioFP": 35.738334245979786,
-        "webglFP": "7d6f8162c7c6be70d191585fd163f34dbc404a8b4f6fcad4d2e660c7b4e4b694",
-        "canvasFP": 732998116,
-        "creation": js_iso_time(datetime.utcnow()),
-        "uuid": "ajs3innzou3hulixyriljvj89by",
-        "d": randint(300, 500),  # how long it took to collect data
-        "osVersion": "10",
-        "vector": get_vector(datetime.now()),
-        "userAgent": user_agent_raw,
-        "serverTimeInMS": js_iso_time(datetime.utcnow().replace(microsecond=1)),
-        "request": None
+        "dg": 11,
+        "dO4": "Europe/Berlin",
+        "b-I2rx-E": "Windows",
+        "YdFB": "Firefox",
+        "dttJrRyO": "",  # vendor
+        "bdI_": 0,  # memory
+        "Y9JA": 8,  # cpu count
+        "bM07og": "de-DE",  # lang
+        "cNxRuCGPAg": "f473d473013d58cee78732e974dd4af2e8d0105449c384658cbf1505e40ede50",  # plugins-hash
+        "Z9dM": "Google Inc. (NVIDIA),ANGLE (NVIDIA, NVIDIA GeForce GTX 980 Direct3D11 vs_5_0 ps_5_0), or similar", # gpu
+        "ZtVDtyo": "9765918a7cae98715522e7c00e27d1d97099a63d69e43e12516c71e0c431760a",  # fonts-hash
+        "YdY6oxJV": "0bf8a05a7ca81397ba527abb2a756e06654d71187ad340c375ee6ebbcd8c8920",  # audioC
+        "b-I4nQ-C61rI": 2560,  # width
+        "d-BEuCA": 1400,  # height
+        "aM02nQV5": "15b022b35c59e79252accf1b4277920cd0f4b408509f8f41812228b748598e2c",  # video hash
+        "bL8zohR5": "c76e22cc6aa9f5a659891983b77cd085a3634dd6f6938827ab5a4c6c61a628e5",  # audio hash
+        "c8Y6qRuA": "ae67baf33b578543350b55e5e7f4306380ecac29d284b4613faf69d2c7b7e26f",  # media hash
+        "dt9DqBc": "469d4ec9f11745c48ce1a2050d0a583a72e5608f99bdb4fbfb779224fa40d591",  # permission hash
+        "YdY6oxI": 35.749972093850374,  # audioFP
+        "bdI2nwA": "b2bdce46f9b58fea296fe1cc09c949ad53149b8e46c9f6b6ac3007cc95a37f53",  # webglFP
+        "cNVHtB2QA2zbSbw": -2143865731,  # canvasFP
+        "YdY6oxJYqA": js_iso_time(datetime.utcnow()),  # creation
+        "d9w-pRFXpw": "7cg9u1hhgg8qxlyi5yveztvx9l0",  # uuid
+        "Y8QyqAl8whI": 108,  # d
+        "Y9U6mw9451U": "10",  # osVersion
+        "depTtw": get_vector(datetime.now()),  # vector
+        "dts-siGT": user_agent_raw,  # userAgent
+        "ZA": js_iso_time(datetime.utcnow().replace(microsecond=1)),  # serverTimeInMS
+        "ctdIvSKVCQ": None  # request
     }
-
-    en_obj = []
-    for k, v in obj.items():
-        en_obj.append(v)
-
-    en_obj = json.dumps(en_obj, separators=(",", ":"))
-    return encrypt(en_obj)
+    en_obj = [obj.get(key, None) for key in FIELD_ORDER]
+    en_obj_str = json.dumps(en_obj, separators=(",", ":"), ensure_ascii=True)
+    return encrypt(en_obj_str)
 
 
 def BeautifulSoup4(response):
