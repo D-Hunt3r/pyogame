@@ -2260,7 +2260,6 @@ def solve_captcha(question_raw, icons_raw):
 
 # Blackbox
 def encode_uri_component(s):
-    # Sichere Zeichen exakt wie in encodeURIComponent
     return quote(s, safe="~()*!.'")
 
 
@@ -2340,7 +2339,7 @@ def get_blackbox():
         "cNVHtB2QA2zbSbw": -2143865731,  # canvasFP
         "YdY6oxJYqA": js_iso_time(datetime.utcnow()),  # creation
         "d9w-pRFXpw": "7cg9u1hhgg8qxlyi5yveztvx9l0",  # uuid
-        "Y8QyqAl8whI": 108,  # d
+        "Y8QyqAl8whI": randint(100, 300),  # how long it took to collect data
         "Y9U6mw9451U": "10",  # osVersion
         "depTtw": get_vector(datetime.now()),  # vector
         "dts-siGT": user_agent_raw,  # userAgent
