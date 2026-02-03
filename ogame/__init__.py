@@ -119,7 +119,7 @@ class OGame(object):
             login_data = self._build_login_data()
 
             response = self.session.post(
-                'https://gameforge.com/api/v1/auth/thin/sessions',
+                'https://spark-web.gameforge.com/api/v2/authProviders/mauth/sessions',
                 json=login_data
             )
 
@@ -148,9 +148,9 @@ class OGame(object):
         return {
             'identity': self.username,
             'password': self.password,
-            'locale': 'de_DE',
+            'locale': 'de-DE',
             'gfLang': self.language,
-            'platformGameId': platform_game_id,
+            'gameId': platform_game_id,
             'gameEnvironmentId': game_environment_id,
             'autoGameAccountCreation': False,
             'blackbox': 'tra:{}'.format(self.blackbox_token)
@@ -158,7 +158,20 @@ class OGame(object):
 
     def _handle_captcha(self, response):
 
-        gfchallengeid = response.headers['gf-challenge-id'].replace(';https://challenge.gameforge.com', '')
+        data = response.json()
+
+        error_types = data.get("errorTypes", [])
+
+        if "CREDENTIALS_INVALID" in error_types:
+            raise ValueError("Login failed: Invalid login details")
+
+        elif "CHALLENGE_REQUIRED" in error_types:
+            gfchallengeid = data.get("challengeId")
+            if not gfchallengeid:
+                raise ValueError("Challenge required, but no challengeId included in the response")
+                
+        elif error_types:
+            raise ValueError(f"Unknown API error: {error_types}")
 
         response2 = self.session.get(
             url='https://challenge.gameforge.com/challenge/' + gfchallengeid
@@ -2310,13 +2323,13 @@ FIELD_ORDER = [
     'dg', 'dO4', 'b-I2rx-E', 'YdFB', 'dttJrRyO', 'bdI_', 'Y9JA', 'bM07og', 'cNxRuCGPAg', 'Z9dM', 'ZtVDtyo',
     'YdY6oxJV', 'b-I4nQ-C61rI', 'd-BEuCA', 'aM02nQV5', 'bL8zohR5', 'c8Y6qRuA', 'dt9DqBc', 'YdY6oxI',
     'bdI2nwA', 'cNVHtB2QA2zbSbw', 'YdY6oxJYqA', 'd9w-pRFXpw', 'Y8QyqAl8whI', 'Y9U6mw9451U', 'depTtw',
-    'dts-siGT', 'ZA', 'ctdIvSKVCQ'
+    'dts-siGT', 'ZA', 'ctdIvSKVCQ', 'YtFF'
 ]
 
 
 def get_blackbox():
     obj = {
-        "dg": 11,
+        "dg": 12,
         "dO4": "Europe/Berlin",
         "b-I2rx-E": "Windows",
         "YdFB": "Firefox",
@@ -2344,7 +2357,8 @@ def get_blackbox():
         "depTtw": get_vector(datetime.now()),  # vector
         "dts-siGT": user_agent_raw,  # userAgent
         "ZA": js_iso_time(datetime.utcnow().replace(microsecond=1)),  # serverTimeInMS
-        "ctdIvSKVCQ": None  # request
+        "ctdIvSKVCQ": None,  # request
+        "YtFF": 0
     }
     en_obj = [obj.get(key, None) for key in FIELD_ORDER]
     en_obj_str = json.dumps(en_obj, separators=(",", ":"), ensure_ascii=True)
